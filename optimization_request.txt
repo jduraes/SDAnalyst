@@ -1,0 +1,13 @@
+Request: Optimize SDAnalyst code by cleaning up redundancy while maintaining all necessary SD card checks and mount/control functionality. Rationalize code into separate reusable functions for future features like:
+
+1. SD card wiping capability
+2. Formatting with multiple partition types (MBR/GPT)
+3. Default to FAT32 formatting
+
+Next project: Create SDFormatter (/mnt/c/Users/miguel/Documents/github/sdform) that will:
+- Show SD card content first
+- Ask user confirmation before formatting
+- Allow selection of partition type (MBR/GUID)
+- Default to FAT32 filesystem
+
+The optimization should create modular functions that both SDAnalyst and SDFormatter can use.
