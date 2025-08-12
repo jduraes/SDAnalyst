@@ -7,24 +7,24 @@
 static sd_analysis_t current_analysis = {0};
 
 int sd_analyzer_init(void) {
-    printf("Initializing SD card...\n");
-    printf("SPI pins: SCK=%d, MOSI=%d, MISO=%d, CS=%d\n", 
+    printf("Initializing SD card...\\n");
+    printf("SPI pins: SCK=%d, MOSI=%d, MISO=%d, CS=%d\\n", 
            SD_PIN_SCK, SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_CS);
     
     int result = sd_init(SD_SPI_PORT, SD_PIN_SCK, SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_CS);
     if (result != 0) {
-        printf("Failed to initialize SD card! Error code: %d\n", result);
-        printf("\nTroubleshooting:\n");
-        printf("1. Check all SPI connections are secure\n");
-        printf("2. Ensure SD card is properly inserted\n");
-        printf("3. Try a different SD card\n");
-        printf("4. Check power supply (3.3V for SD card)\n");
-        printf("5. Verify pin connections match the code\n");
+        printf("Failed to initialize SD card! Error code: %d\\n", result);
+        printf("\\nTroubleshooting:\\n");
+        printf("1. Check all SPI connections are secure\\n");
+        printf("2. Ensure SD card is properly inserted\\n");
+        printf("3. Try a different SD card\\n");
+        printf("4. Check power supply (3.3V for SD card)\\n");
+        printf("5. Verify pin connections match the code\\n");
         current_analysis.initialized = false;
         return result;
     }
     
-    printf("SD card initialized successfully!\n");
+    printf("SD card initialized successfully!\\n");
     current_analysis.initialized = true;
     return 0;
 }
@@ -65,22 +65,22 @@ int sd_analyzer_get_info(sd_analysis_t* analysis) {
 }
 
 void sd_analyzer_print_card_info(const sd_card_info_t* card_info) {
-    printf("\nSD Card Information:\n");
-    printf("Type: %s\n", card_info->type == SD_CARD_TYPE_SD1 ? "SD1" : 
+    printf("\\nSD Card Information:\\n");
+    printf("Type: %s\\n", card_info->type == SD_CARD_TYPE_SD1 ? "SD1" : 
                       card_info->type == SD_CARD_TYPE_SD2 ? "SD2" : 
                       card_info->type == SD_CARD_TYPE_SDHC ? "SDHC" : "Unknown");
-    printf("Capacity: %.2f MB (%u blocks)\n", 
+    printf("Capacity: %.2f MB (%u blocks)\\n", 
            (card_info->blocks * 512.0) / (1024 * 1024), 
            card_info->blocks);
-    printf("Block size: %u bytes\n", card_info->block_size);
+    printf("Block size: %u bytes\\n", card_info->block_size);
 }
 
 void sd_analyzer_print_banner(const char* app_name, const char* version) {
-    printf("********************************************************************************\n");
-    printf("Raspberry Pi Pico %s\n", app_name);
-    printf("Version: %s\n", version);
-    printf("Built: %s %s\n", __DATE__, __TIME__);
-    printf("================================================================================\n");
+    printf("********************************************************************************\\n");
+    printf("Raspberry Pi Pico %s\\n", app_name);
+    printf("Version: %s\\n", version);
+    printf("Built: %s %s\\n", __DATE__, __TIME__);
+    printf("================================================================================\\n");
 }
 
 bool sd_analyzer_is_gpt_protective_mbr(void) {
@@ -98,7 +98,7 @@ int sd_analyzer_parse_mbr(partition_info_t* partitions, uint32_t max_partitions)
     }
     
     int partition_count = 0;
-    printf("\n=== MBR Partition Table ===\n");
+    printf("\\n=== MBR Partition Table ===\\n");
     
     for (int i = 0; i < 4 && partition_count < max_partitions; i++) {
         uint8_t *partition = &mbr[446 + i * 16];
@@ -122,8 +122,8 @@ int sd_analyzer_parse_mbr(partition_info_t* partitions, uint32_t max_partitions)
             sd_analyzer_detect_filesystem(lba_start, partitions[partition_count].filesystem, 
                                         sizeof(partitions[partition_count].filesystem));
             
-            printf("Partition %d:\n", i + 1);
-            printf("  Status: 0x%02X (%s)\n", status, (status == 0x80) ? "Bootable" : "Not bootable");
+            printf("Partition %d:\\n", i + 1);
+            printf("  Status: 0x%02X (%s)\\n", status, (status == 0x80) ? "Bootable" : "Not bootable");
             printf("  Type: 0x%02X", type);
             switch (type) {
                 case 0x01: printf(" (FAT12)"); break;
@@ -136,10 +136,10 @@ int sd_analyzer_parse_mbr(partition_info_t* partitions, uint32_t max_partitions)
                 case 0xEE: printf(" (GPT Protective MBR)"); break;
                 default: printf(" (Unknown)"); break;
             }
-            printf("\n");
-            printf("  LBA Start: %u\n", lba_start);
-            printf("  Size: %u sectors (%.2f MB)\n", lba_size, (lba_size * 512.0) / (1024 * 1024));
-            printf("  Filesystem: %s\n", partitions[partition_count].filesystem);
+            printf("\\n");
+            printf("  LBA Start: %u\\n", lba_start);
+            printf("  Size: %u sectors (%.2f MB)\\n", lba_size, (lba_size * 512.0) / (1024 * 1024));
+            printf("  Filesystem: %s\\n", partitions[partition_count].filesystem);
             
             partition_count++;
         }
@@ -150,7 +150,7 @@ int sd_analyzer_parse_mbr(partition_info_t* partitions, uint32_t max_partitions)
 
 int sd_analyzer_parse_gpt(partition_info_t* partitions, uint32_t max_partitions) {
     uint8_t gpt_header[512];
-    printf("\n=== GPT Partition Table ===\n");
+    printf("\\n=== GPT Partition Table ===\\n");
     
     if (sd_read_block(1, gpt_header) != 0) {
         return -1;
@@ -167,8 +167,8 @@ int sd_analyzer_parse_gpt(partition_info_t* partitions, uint32_t max_partitions)
     uint32_t entry_size = gpt_header[84] | (gpt_header[85] << 8) | 
                          (gpt_header[86] << 16) | (gpt_header[87] << 24);
     
-    printf("Number of partitions: %u\n", num_partitions);
-    printf("Partition entries start at LBA: %u\n", partition_entry_lba);
+    printf("Number of partitions: %u\\n", num_partitions);
+    printf("Partition entries start at LBA: %u\\n", partition_entry_lba);
     
     uint8_t partition_table[512];
     if (sd_read_block(partition_entry_lba, partition_table) != 0) {
@@ -217,14 +217,14 @@ int sd_analyzer_parse_gpt(partition_info_t* partitions, uint32_t max_partitions)
             sd_analyzer_detect_filesystem((uint32_t)start_lba, partitions[partition_count].filesystem,
                                         sizeof(partitions[partition_count].filesystem));
             
-            printf("\nPartition %u:\n", i + 1);
-            printf("  Name: %s\n", partitions[partition_count].name);
-            printf("  Start LBA: %llu\n", start_lba);
-            printf("  End LBA: %llu\n", end_lba);
-            printf("  Size: %llu sectors (%.2f MB)\n", 
+            printf("\\nPartition %u:\\n", i + 1);
+            printf("  Name: %s\\n", partitions[partition_count].name);
+            printf("  Start LBA: %llu\\n", start_lba);
+            printf("  End LBA: %llu\\n", end_lba);
+            printf("  Size: %llu sectors (%.2f MB)\\n", 
                    end_lba - start_lba + 1, 
                    ((end_lba - start_lba + 1) * 512.0) / (1024 * 1024));
-            printf("  Filesystem: %s\n", partitions[partition_count].filesystem);
+            printf("  Filesystem: %s\\n", partitions[partition_count].filesystem);
             
             partition_count++;
         }
@@ -285,19 +285,19 @@ void sd_analyzer_print_hex_dump(uint8_t *data, size_t len, size_t offset) {
                 char c = (data[j] >= 32 && data[j] <= 126) ? data[j] : '.';
                 printf("%c", c);
             }
-            printf("|\n");
+            printf("|\\n");
         }
     }
 }
 
 void sd_analyzer_read_and_display_sector(uint32_t sector_num) {
     uint8_t buffer[512];
-    printf("\n--- Reading sector %u ---\n", sector_num);
+    printf("\\n--- Reading sector %u ---\\n", sector_num);
     
     if (sd_read_block(sector_num, buffer) == 0) {
         sd_analyzer_print_hex_dump(buffer, 512, sector_num * 512);
     } else {
-        printf("Error reading sector %u\n", sector_num);
+        printf("Error reading sector %u\\n", sector_num);
     }
 }
 
@@ -305,7 +305,7 @@ bool sd_analyzer_confirm_action(const char* prompt) {
     // Since this is embedded, we'll return true by default
     // In a real implementation, this could wait for UART input
     printf("%s [Y/n]: ", prompt);
-    printf("(Auto-confirming for embedded system)\n");
+    printf("(Auto-confirming for embedded system)\\n");
     return true;
 }
 
@@ -331,7 +331,7 @@ void sd_analyzer_format_fat_datetime(uint16_t date, uint16_t time, char* output,
 void sd_analyzer_analyze_fat(uint32_t start_lba) {
     uint8_t boot_sector[512];
     if (sd_read_block(start_lba, boot_sector) != 0) {
-        printf("  Error reading FAT boot sector\n");
+        printf("  Error reading FAT boot sector\\n");
         return;
     }
     
@@ -348,28 +348,28 @@ void sd_analyzer_analyze_fat(uint32_t start_lba) {
                          (boot_sector[38] << 16) | (boot_sector[39] << 24);
     }
     
-    printf("  Bytes per sector: %u\n", bytes_per_sector);
-    printf("  Sectors per cluster: %u\n", sectors_per_cluster);
-    printf("  Reserved sectors: %u\n", reserved_sectors);
-    printf("  Number of FATs: %u\n", num_fats);
-    printf("  Root entries: %u\n", root_entries);
-    printf("  Sectors per FAT: %u\n", sectors_per_fat);
+    printf("  Bytes per sector: %u\\n", bytes_per_sector);
+    printf("  Sectors per cluster: %u\\n", sectors_per_cluster);
+    printf("  Reserved sectors: %u\\n", reserved_sectors);
+    printf("  Number of FATs: %u\\n", num_fats);
+    printf("  Root entries: %u\\n", root_entries);
+    printf("  Sectors per FAT: %u\\n", sectors_per_fat);
     
     uint32_t fat_start = start_lba + reserved_sectors;
     uint32_t root_dir_start = fat_start + (num_fats * sectors_per_fat);
     
-    printf("  FAT starts at LBA: %u\n", fat_start);
-    printf("  Root directory at LBA: %u\n", root_dir_start);
+    printf("  FAT starts at LBA: %u\\n", fat_start);
+    printf("  Root directory at LBA: %u\\n", root_dir_start);
     
     sd_analyzer_list_fat_directory(root_dir_start, "/");
 }
 
 void sd_analyzer_list_fat_directory(uint32_t dir_start_lba, const char* path) {
     uint8_t buffer[512];
-    printf("\n  === Directory listing for %s ===\n", path);
+    printf("\\n  === Directory listing for %s ===\\n", path);
     
     if (sd_read_block(dir_start_lba, buffer) != 0) {
-        printf("  Error reading directory sector\n");
+        printf("  Error reading directory sector\\n");
         return;
     }
     
@@ -469,12 +469,12 @@ void sd_analyzer_list_fat_directory(uint32_t dir_start_lba, const char* path) {
             printf(" [%s]", short_filename);
         }
         
-        printf("\n");
+        printf("\\n");
         file_count++;
         
         memset(long_filename, 0, sizeof(long_filename));
     }
     
-    printf("  total %d\n", (int)(total_size / 1024));
-    printf("  %d files and directories\n", file_count);
+    printf("  total %d\\n", (int)(total_size / 1024));
+    printf("  %d files and directories\\n", file_count);
 }

@@ -22,7 +22,8 @@ static uint8_t sd_spi_write(uint8_t data) {
 }
 
 static void sd_wait_not_busy() {
-    while (sd_spi_write(0xFF) != 0xFF);
+    int timeout = 1000;
+    while (sd_spi_write(0xFF) != 0xFF && --timeout > 0);
 }
 
 static uint8_t sd_send_command(uint8_t cmd, uint32_t arg) {
@@ -46,8 +47,8 @@ static uint8_t sd_send_command(uint8_t cmd, uint32_t arg) {
         sd_spi_write(0x01);
     }
     
-    // Wait for response
-    for (int i = 0; i < 10; i++) {
+    // Wait for response (increased attempts)
+    for (int i = 0; i < 20; i++) {
         response = sd_spi_write(0xFF);
         if ((response & 0x80) == 0) break;
     }
@@ -55,12 +56,55 @@ static uint8_t sd_send_command(uint8_t cmd, uint32_t arg) {
     return response;
 }
 
+// Enhanced reset sequence for problematic cards
+static int sd_enhanced_reset() {
+    printf("Enhanced reset sequence for problematic cards...\n");
+    
+    // Power cycle simulation - CS high for longer
+    sd_cs_deselect();
+    sleep_ms(100);  // Much longer delay
+    
+    // Send many more clock cycles (200+) 
+    printf("Sending 200 clock cycles...\n");
+    for (int i = 0; i < 25; i++) {
+        sd_spi_write(0xFF);
+    }
+    
+    sleep_ms(50);
+    
+    // Try multiple CMD0 attempts with different approaches
+    for (int attempt = 0; attempt < 10; attempt++) {
+        printf("CMD0 attempt %d...\n", attempt + 1);
+        
+        sd_cs_select();
+        sleep_ms(1);
+        
+        uint8_t response = sd_send_command(CMD0, 0);
+        printf("CMD0 response: 0x%02X\n", response);
+        
+        if (response == 0x01) {
+            printf("CMD0 successful after %d attempts\n", attempt + 1);
+            return 0;  // Success
+        }
+        
+        sd_cs_deselect();
+        
+        // Progressive delays and more clock cycles
+        for (int i = 0; i < (attempt + 1) * 5; i++) {
+            sd_spi_write(0xFF);
+        }
+        sleep_ms((attempt + 1) * 10);
+    }
+    
+    return -1;  // Failed
+}
+
 int sd_init(spi_inst_t *spi, uint sck, uint mosi, uint miso, uint cs) {
     sd_spi = spi;
     sd_cs_pin = cs;
     
-    // Initialize SPI
-    spi_init(spi, 100 * 1000); // Start at 100kHz for better compatibility
+    // Initialize SPI at much slower speed
+    spi_init(spi, 25 * 1000); // Start at 25kHz for maximum compatibility
     gpio_set_function(sck, GPIO_FUNC_SPI);
     gpio_set_function(mosi, GPIO_FUNC_SPI);
     gpio_set_function(miso, GPIO_FUNC_SPI);
@@ -70,40 +114,36 @@ int sd_init(spi_inst_t *spi, uint sck, uint mosi, uint miso, uint cs) {
     gpio_set_dir(cs, GPIO_OUT);
     sd_cs_deselect();
     
-    sleep_ms(10); // Longer power-up delay
+    sleep_ms(100); // Much longer power-up delay
     
-    // Send 80 clock pulses with CS high
-    for (int i = 0; i < 10; i++) {
-        sd_spi_write(0xFF);
+    // Enhanced reset sequence
+    if (sd_enhanced_reset() != 0) {
+        printf("Enhanced reset failed, trying standard reset...\n");
+        
+        // Fallback to original sequence
+        sd_cs_select();
+        uint8_t response = sd_send_command(CMD0, 0);
+        printf("Fallback CMD0 response: 0x%02X\n", response);
+        
+        if (response != 0x01) {
+            printf("CMD0 failed - card not responding\n");
+            sd_cs_deselect();
+            return -1;
+        }
     }
     
-    // Additional delay after power-up sequence
-    sleep_ms(1);
-    
-    sd_cs_select();
-    
-    // CMD0: Go to idle state
-    printf("Sending CMD0 (reset)...\n");
-    uint8_t response = sd_send_command(CMD0, 0);
-    printf("CMD0 response: 0x%02X (expected: 0x01)\n", response);
-    if (response != 0x01) {
-        printf("CMD0 failed - card not responding or bad connection\n");
-        sd_cs_deselect();
-        return -1;
-    }
-    
-    // CMD8: Check voltage range (SD v2.0 only)
+    // Continue with CMD8 and rest of initialization...
     printf("Sending CMD8 (voltage check)...\n");
-    response = sd_send_command(CMD8, 0x1AA);
+    uint8_t response = sd_send_command(CMD8, 0x1AA);
     printf("CMD8 response: 0x%02X\n", response);
+    
     if (response == 0x01) {
         printf("SD v2.0 card detected\n");
-        // SD v2.0
         uint32_t ocr = 0;
         for (int i = 0; i < 4; i++) {
             ocr = (ocr << 8) | sd_spi_write(0xFF);
         }
-        printf("CMD8 OCR response: 0x%08X (expected: 0x??????1AA)\n", ocr);
+        printf("CMD8 OCR response: 0x%08X\n", ocr);
         
         if ((ocr & 0xFFF) != 0x1AA) {
             printf("CMD8 OCR check failed\n");
@@ -111,80 +151,36 @@ int sd_init(spi_inst_t *spi, uint sck, uint mosi, uint miso, uint cs) {
             return -2;
         }
         
-        // Try standard SD v2 initialization sequence
-        printf("Starting SD v2.0 initialization sequence...\n");
-        
-        // First, try without HCS bit for compatibility
-        printf("Phase 1: ACMD41 without HCS bit...\n");
-        int timeout = 100;
+        // Rest of initialization with longer timeouts...
+        printf("Starting enhanced ACMD41 sequence...\n");
+        int timeout = 200; // Double the timeout
         int attempt = 0;
+        
         do {
-            // Send CMD55 (next command is app-specific)
             uint8_t cmd55_resp = sd_send_command(CMD55, 0);
-            
-            // Wait a bit between CMD55 and ACMD41
-            sleep_ms(1);
-            
-            // Send ACMD41 without HCS bit
-            response = sd_send_command(ACMD41, 0x00000000);
+            sleep_ms(5); // Longer delay
+            response = sd_send_command(ACMD41, 0x40000000); // Start with HCS
             
             attempt++;
-            if (attempt % 10 == 0) {
+            if (attempt % 5 == 0) { // More frequent updates
                 printf("Attempt %d: CMD55=0x%02X, ACMD41=0x%02X\n", attempt, cmd55_resp, response);
             }
             
-            // Check for success or valid responses
             if (response == 0x00) {
-                printf("ACMD41 without HCS successful after %d attempts\n", attempt);
+                printf("ACMD41 successful after %d attempts\n", attempt);
                 break;
             }
             
-            // Check if CMD55 failed
-            if (cmd55_resp != 0x01 && cmd55_resp != 0x00) {
-                printf("CMD55 failed with 0x%02X, aborting\n", cmd55_resp);
-                break;
-            }
-            
-            sleep_ms(10); // Longer delay between attempts
+            sleep_ms(20); // Much longer delay between attempts
         } while (--timeout > 0);
-        
-        // If phase 1 failed, try with HCS bit
-        if (response != 0x00) {
-            printf("Phase 2: ACMD41 with HCS bit...\n");
-            timeout = 100;
-            attempt = 0;
-            do {
-                uint8_t cmd55_resp = sd_send_command(CMD55, 0);
-                sleep_ms(1);
-                response = sd_send_command(ACMD41, 0x40000000);
-                
-                attempt++;
-                if (attempt % 10 == 0) {
-                    printf("Attempt %d: CMD55=0x%02X, ACMD41=0x%02X\n", attempt, cmd55_resp, response);
-                }
-                
-                if (response == 0x00) {
-                    printf("ACMD41 with HCS successful after %d attempts\n", attempt);
-                    break;
-                }
-                
-                if (cmd55_resp != 0x01 && cmd55_resp != 0x00) {
-                    printf("CMD55 failed with 0x%02X, aborting\n", cmd55_resp);
-                    break;
-                }
-                
-                sleep_ms(10);
-            } while (--timeout > 0);
-        }
         
         if (timeout == 0) {
             printf("ACMD41 timeout - card not ready\n");
             sd_cs_deselect();
             return -3;
         }
-        printf("ACMD41 successful after %d tries\n", 1000 - timeout);
         
-        // Check CCS bit in OCR
+        // Continue with rest of initialization...
         response = sd_send_command(CMD58, 0);
         if (response != 0x00) {
             sd_cs_deselect();
@@ -198,98 +194,111 @@ int sd_init(spi_inst_t *spi, uint sck, uint mosi, uint miso, uint cs) {
         
         if (ocr_resp & 0x40000000) {
             sd_info.type = SD_CARD_TYPE_SDHC;
+            printf("SDHC card detected\n");
         } else {
-            sd_info.type = SD_CARD_TYPE_SD2;
+            sd_info.type = SD_CARD_TYPE_SD;
+            printf("Standard SD card detected\n");
         }
         
-    } else if (response == 0x05) {
-        printf("SD v1.0 or MMC card detected\n");
-        // SD v1.0 or MMC
-        sd_info.type = SD_CARD_TYPE_SD1;
-        
-        printf("Sending ACMD41 for SD v1.0...\n");
-        int timeout = 1000;
-        do {
-            sd_send_command(CMD55, 0);
-            response = sd_send_command(ACMD41, 0);
-            if (timeout % 100 == 0) printf("ACMD41 v1 response: 0x%02X, timeout left: %d\n", response, timeout);
-            sleep_ms(1);
-        } while (response != 0x00 && --timeout > 0);
-        
-        if (timeout == 0) {
-            printf("ACMD41 v1 timeout\n");
+        // Get card size
+        response = sd_send_command(CMD9, 0);
+        if (response != 0x00) {
             sd_cs_deselect();
-            return -4;
+            return -1;
         }
-        printf("ACMD41 v1 successful\n");
-    } else {
-        printf("Unknown CMD8 response: 0x%02X\n", response);
-        printf("This may be an older card or unsupported type\n");
+        
+        // Wait for data start token
+        while (sd_spi_write(0xFF) != 0xFE);
+        
+        uint8_t csd[16];
+        for (int i = 0; i < 16; i++) {
+            csd[i] = sd_spi_write(0xFF);
+        }
+        sd_spi_write(0xFF); // CRC
+        sd_spi_write(0xFF); // CRC
+        
+        // Parse CSD for SDHC
+        if (sd_info.type == SD_CARD_TYPE_SDHC) {
+            uint32_t c_size = ((csd[7] & 0x3F) << 16) | (csd[8] << 8) | csd[9];
+            sd_info.blocks = (c_size + 1) * 1024;
+        }
+        
         sd_cs_deselect();
-        return -5;
+        
+        // Increase SPI speed after successful initialization
+        spi_set_baudrate(spi, 1000 * 1000); // 1MHz for data transfer
+        
+        printf("SD card initialization complete!\n");
+        printf("Card type: %s\n", sd_info.type == SD_CARD_TYPE_SDHC ? "SDHC" : "SD");
+        printf("Blocks: %u\n", sd_info.blocks);
+        
+        return 0;
     }
     
     sd_cs_deselect();
-    
-    printf("SD card initialization complete!\n");
-    
-    // Keep slower speed for more reliable reading
-    // spi_set_baudrate(spi, 1 * 1000 * 1000); // 1 MHz for stable reading
-    
-    // Get card size info
-    sd_info.block_size = 512;
-    sd_info.blocks = 1024 * 1024; // Default, should read from CSD
-    
-    return 0;
+    return -1;
 }
 
-int sd_get_info(sd_card_info_t *info) {
-    *info = sd_info;
-    return 0;
+// Rest of the functions remain the same...
+
+const sd_card_info_t* sd_get_info_ptr() {
+    return &sd_info;
 }
 
-int sd_read_block(uint32_t block, uint8_t *buffer) {
+int sd_read_block(uint32_t lba, uint8_t* buffer) {
     uint8_t response;
+    uint32_t address;
     
-    printf("Reading block %u...\n", block);
+    // Convert LBA to byte address for standard capacity cards
+    if (sd_info.type == SD_CARD_TYPE_SDHC) {
+        address = lba;  // SDHC uses block addressing
+    } else {
+        address = lba * 512;  // Standard SD uses byte addressing
+    }
     
     sd_cs_select();
     
-    // For SDHC cards, use block address directly
-    // For SD cards, convert to byte address
-    uint32_t address = (sd_info.type == SD_CARD_TYPE_SDHC) ? block : block * 512;
-    printf("Address: %u, Card type: %s\n", address, 
-           (sd_info.type == SD_CARD_TYPE_SDHC) ? "SDHC" : "SD");
-    
-    response = sd_send_command(READ_SINGLE_BLOCK, address);
-    printf("CMD17 response: 0x%02X\n", response);
+    // Send CMD17 (read single block)
+    response = sd_send_command(CMD17, address);
     if (response != 0x00) {
-        printf("CMD17 failed with response: 0x%02X\n", response);
         sd_cs_deselect();
         return -1;
     }
     
-    // Wait for data token
+    // Wait for data start token
     int timeout = 1000;
     do {
         response = sd_spi_write(0xFF);
-        timeout--;
-    } while (response != 0xFE && timeout > 0);
+    } while (response != 0xFE && --timeout > 0);
     
     if (timeout == 0) {
         sd_cs_deselect();
         return -1;
     }
     
-    // Read data
+    // Read 512 bytes of data
     for (int i = 0; i < 512; i++) {
         buffer[i] = sd_spi_write(0xFF);
     }
     
-    // Read CRC (ignore)
+    // Read CRC (but don't check it)
     sd_spi_write(0xFF);
     sd_spi_write(0xFF);
     
     sd_cs_deselect();
+    return 0;
+}
+
+void sd_print_debug_info() {
+    printf("=== SD Card Debug Info ===\n");
+    printf("Type: %s\n", sd_info.type == SD_CARD_TYPE_SDHC ? "SDHC" : "SD");
+    printf("Blocks: %u\n", sd_info.blocks);
+    printf("Capacity: %.2f MB\n", (sd_info.blocks * 512.0) / (1024 * 1024));
+    printf("========================\n");
+}
+
+int sd_get_info(sd_card_info_t *info) {
+    if (info == NULL) return -1;
+    *info = sd_info;
     return 0;
 }
