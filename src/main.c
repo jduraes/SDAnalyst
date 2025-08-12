@@ -3,8 +3,9 @@
 #include <string.h>
 #include "pico/stdlib.h"
 #include "sd_analyzer.h"
+#include "partition_display.h"
 
-#define VERSION "1.5.0"
+#define VERSION "1.6.0"
 
 int main() {
     stdio_init_all();
@@ -36,55 +37,64 @@ int main() {
            (analysis.card_info.blocks * 512.0) / (1024 * 1024),
            analysis.card_info.blocks);
     
-    // Analyze partitions
-    partition_info_t partitions[8];
+    // Analyze partitions using enhanced display
+    partition_info_t basic_partitions[8];
+    enhanced_partition_info_t enhanced_partitions[8];
     int partition_count = 0;
     
     if (analysis.has_gpt) {
         printf("Partition table: GPT\n");
-        partition_count = sd_analyzer_parse_gpt(partitions, 8);
+        partition_count = sd_analyzer_parse_gpt(basic_partitions, 8);
+        
+        // Convert to enhanced partition info
+        for (int i = 0; i < partition_count; i++) {
+            partition_display_enhance_partition_info(&enhanced_partitions[i], &basic_partitions[i]);
+        }
+        
+        // Print unified table
+        partition_display_print_unified_table(enhanced_partitions, partition_count, "GPT");
+        
     } else if (analysis.has_mbr) {
         printf("Partition table: MBR\n");
-        partition_count = sd_analyzer_parse_mbr(partitions, 8);
+        partition_count = sd_analyzer_parse_mbr(basic_partitions, 8);
+        
+        // Convert to enhanced partition info
+        for (int i = 0; i < partition_count; i++) {
+            partition_display_enhance_partition_info(&enhanced_partitions[i], &basic_partitions[i]);
+        }
+        
+        // Print unified table
+        partition_display_print_unified_table(enhanced_partitions, partition_count, "MBR");
+        
     } else {
         printf("Partition table: None\n");
     }
     
     if (partition_count > 0) {
-        printf("\n+-----+-------------+---------+-----------+\n");
-        printf("| #   | Name        | Type    | Size      |\n");
-        printf("+-----+-------------+---------+-----------+\n");
-        
-        for (int i = 0; i < partition_count; i++) {
-            char name[13];
-            if (strlen(partitions[i].name) == 0) {
-                snprintf(name, sizeof(name), "Partition %d", i + 1);
-            } else {
-                snprintf(name, sizeof(name), "%.11s", partitions[i].name);
-            }
-            
-            printf("| %-3d | %-11s | %-7s | %6.1f MB |\n", 
-                   i + 1,
-                   name,
-                   partitions[i].filesystem,
-                   (partitions[i].size_sectors * 512.0) / (1024 * 1024));
-        }
-        printf("+-----+-------------+---------+-----------+\n");
-        
         // Show contents of ALL partitions
         printf("\n=== ALL PARTITION CONTENTS ===\n");
         for (int i = 0; i < partition_count; i++) {
-            printf("\n--- PARTITION %d: %s (%.1f MB) ---\n", 
-                   i + 1, 
-                   partitions[i].filesystem,
-                   (partitions[i].size_sectors * 512.0) / (1024 * 1024));
+            char size_str[32];
+            uint64_t size_bytes = (uint64_t)enhanced_partitions[i].size_sectors * 512;
+            partition_display_format_size(size_bytes, size_str, sizeof(size_str));
             
-            if (strcmp(partitions[i].filesystem, "FAT32") == 0 ||
-                strcmp(partitions[i].filesystem, "FAT16") == 0 ||
-                strcmp(partitions[i].filesystem, "FAT12") == 0) {
+            const char* display_name = partition_display_get_display_name(&enhanced_partitions[i]);
+            
+            printf("\n--- PARTITION %d: %s (%s) ---\n", 
+                   i + 1, 
+                   enhanced_partitions[i].filesystem,
+                   size_str);
+            
+            if (display_name && strlen(display_name) > 0 && strcmp(display_name, "(no label)") != 0) {
+                printf("Volume Label: %s\n", display_name);
+            }
+            
+            if (strcmp(enhanced_partitions[i].filesystem, "FAT32") == 0 ||
+                strcmp(enhanced_partitions[i].filesystem, "FAT16") == 0 ||
+                strcmp(enhanced_partitions[i].filesystem, "FAT12") == 0) {
                 
                 // Calculate actual root directory location for FAT
-                uint32_t fat_start_lba = partitions[i].start_lba;
+                uint32_t fat_start_lba = enhanced_partitions[i].start_lba;
                 
                 // Read the boot sector to get proper FAT parameters
                 uint8_t boot_sector[512];
@@ -102,9 +112,9 @@ int main() {
                     printf("Could not read boot sector for partition %d\n", i + 1);
                 }
                 
-            } else if (strcmp(partitions[i].filesystem, "exFAT") == 0) {
+            } else if (strcmp(enhanced_partitions[i].filesystem, "exFAT") == 0) {
                 printf("exFAT partition - detailed analysis not implemented yet\n");
-            } else if (strncmp(partitions[i].filesystem, "ext", 3) == 0) {
+            } else if (strncmp(enhanced_partitions[i].filesystem, "ext", 3) == 0) {
                 printf("Linux ext filesystem - detailed analysis not implemented yet\n");
             } else {
                 printf("Unknown filesystem type - cannot analyze contents\n");

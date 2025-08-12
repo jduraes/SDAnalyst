@@ -2,7 +2,7 @@
 
 # Flash SD card reader firmware to Raspberry Pi Pico
 
-UF2_FILE="build/sd_card_reader.uf2"
+UF2_FILE="build/sdanalyst.uf2"
 
 if [ ! -f "$UF2_FILE" ]; then
     echo "Error: UF2 file not found. Please build the project first."
